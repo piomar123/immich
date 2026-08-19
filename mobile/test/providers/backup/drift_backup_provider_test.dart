@@ -106,4 +106,21 @@ void main() {
       onSuccess('asset-1', 'remote-1');
     });
   });
+
+  group('isForegroundBackupActive', () {
+    test('is false before a backup has ever started', () {
+      expect(notifier.isForegroundBackupActive, isFalse);
+    });
+
+    test('is true once a backup has started and false once it is stopped', () async {
+      mockCounts(total: 1, remainder: 1);
+      await startAndCaptureOnSuccess();
+
+      expect(notifier.isForegroundBackupActive, isTrue);
+
+      notifier.stopForegroundBackup(reason: "test");
+
+      expect(notifier.isForegroundBackupActive, isFalse);
+    });
+  });
 }

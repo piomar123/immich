@@ -91,6 +91,10 @@ class DriftBackupNotifier extends StateNotifier<DriftBackupState> {
 
   final _logger = Logger("DriftBackupNotifier");
 
+  /// Whether a foreground backup is currently in-flight (started and not yet
+  /// stopped/completed). Used to avoid restarting an upload that's still running.
+  bool get isForegroundBackupActive => _cancelToken != null && !_cancelToken!.isCompleted;
+
   /// Remove upload item from state
   void _removeUploadItem(String taskId) {
     if (!mounted) {

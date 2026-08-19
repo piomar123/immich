@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/config/app_config.dart';
@@ -68,6 +69,25 @@ class TestWebsocketNotifier extends WebsocketNotifier {
 
 class TestDriftBackupNotifier extends DriftBackupNotifier {
   TestDriftBackupNotifier() : super(MockForegroundUploadService(), MockBackgroundUploadService(), UploadSpeedManager());
+
+  int stopForegroundBackupCallCount = 0;
+  int startForegroundBackupCallCount = 0;
+  bool _foregroundBackupActive = false;
+
+  @override
+  bool get isForegroundBackupActive => _foregroundBackupActive;
+
+  @override
+  void stopForegroundBackup({required String reason}) {
+    stopForegroundBackupCallCount++;
+    _foregroundBackupActive = false;
+  }
+
+  @override
+  Future<void> startForegroundBackup(String userId) async {
+    startForegroundBackupCallCount++;
+    _foregroundBackupActive = true;
+  }
 }
 
 void main() {
@@ -77,6 +97,7 @@ void main() {
   late MockBackgroundWorkerLockService lockService;
   late ProviderContainer container;
   late TestWebsocketNotifier websocket;
+  late TestDriftBackupNotifier driftBackup;
   late AppLifeCycleNotifier lifeCycle;
   late int serverVersionCount;
 
@@ -116,10 +137,13 @@ void main() {
         websocketProvider.overrideWith((ref) {
           return websocket = TestWebsocketNotifier(ref);
         }),
-        driftBackupProvider.overrideWith((_) => TestDriftBackupNotifier()),
+        driftBackupProvider.overrideWith((_) => driftBackup = TestDriftBackupNotifier()),
         backgroundWorkerLockServiceProvider.overrideWithValue(lockService),
       ],
     );
+    // driftBackupProvider.overrideWith is lazy - force it to instantiate now so
+    // `driftBackup` is always assigned, even in tests where the notifier is never read.
+    container.read(driftBackupProvider.notifier);
     lifeCycle = container.read(appStateProvider.notifier);
   });
 
@@ -176,5 +200,31 @@ void main() {
     expect(serverVersionCount, 2);
     expect(websocket.disconnectCount, 2);
     expect(websocket.connectCount, 1);
+  });
+
+  test('a brief app-switcher glance does not stop the in-progress foreground backup', () {
+    fakeAsync((async) {
+      unawaited(lifeCycle.handleAppPause());
+      async.flushMicrotasks();
+
+      unawaited(lifeCycle.handleAppResume());
+      async.flushMicrotasks();
+
+      // Even well past the grace period, the backup should never have been stopped.
+      async.elapse(const Duration(seconds: 10));
+
+      expect(driftBackup.stopForegroundBackupCallCount, 0);
+    });
+  });
+
+  test('a sustained pause stops the foreground backup once the grace period elapses', () {
+    fakeAsync((async) {
+      unawaited(lifeCycle.handleAppPause());
+      async.flushMicrotasks();
+
+      async.elapse(const Duration(seconds: 5, milliseconds: 100));
+
+      expect(driftBackup.stopForegroundBackupCallCount, 1);
+    });
   });
 }

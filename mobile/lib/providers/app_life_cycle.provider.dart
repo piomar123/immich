@@ -27,6 +27,14 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
   Completer<void>? _resumeOperation;
   Completer<void>? _pauseOperation;
 
+  // Brief app-switcher glances (e.g. checking another app for a second) also fire a
+  // pause/resume cycle. Cancelling the foreground backup immediately on every pause
+  // discards any in-flight upload (uploads aren't resumable), forcing large assets
+  // like videos to restart from byte zero on resume. Delay the cancellation so a
+  // quick round-trip back to the app doesn't interrupt an upload in progress (#30503).
+  static const _backupStopGracePeriod = Duration(seconds: 5);
+  Timer? _pendingBackupStopTimer;
+
   final _log = Logger("AppLifeCycleNotifier");
 
   AppLifeCycleNotifier(this._ref) : super(AppLifeCycleEnum.active);
@@ -37,6 +45,10 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
 
   Future<void> handleAppResume() async {
     state = AppLifeCycleEnum.resumed;
+
+    // We made it back before the grace period elapsed, so the foreground backup
+    // (if any) was never actually stopped - nothing to resume.
+    _cancelPendingBackupStop();
 
     // Prevent overlapping resume operations
     if (_resumeOperation != null && !_resumeOperation!.isCompleted) {
@@ -156,10 +168,17 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
     if (isEnableBackup) {
       final currentUser = Store.tryGet(StoreKey.currentUser);
       if (currentUser != null) {
-        await _safeRun(
-          () => _ref.read(driftBackupProvider.notifier).startForegroundBackup(currentUser.id),
-          "handleBackupResume",
-        );
+        final backupNotifier = _ref.read(driftBackupProvider.notifier);
+
+        // A pause/resume round-trip that completed within the grace period (see
+        // _scheduleBackupStop) never actually stopped the foreground backup - it's
+        // still running. Restarting it here would re-upload any in-flight asset
+        // from scratch, so leave it alone.
+        if (backupNotifier.isForegroundBackupActive) {
+          return;
+        }
+
+        await _safeRun(() => backupNotifier.startForegroundBackup(currentUser.id), "handleBackupResume");
       }
     }
   }
@@ -207,7 +226,7 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
 
   Future<void> _performPause() {
     if (_ref.read(authProvider).isAuthenticated) {
-      _ref.read(driftBackupProvider.notifier).stopForegroundBackup(reason: "the app being sent to the background");
+      _scheduleBackupStop();
 
       _ref.read(websocketProvider.notifier).disconnect();
     }
@@ -215,8 +234,28 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
     return LogService.I.flush().catchError((_) {});
   }
 
+  void _scheduleBackupStop() {
+    _pendingBackupStopTimer?.cancel();
+    _pendingBackupStopTimer = Timer(_backupStopGracePeriod, () {
+      _pendingBackupStopTimer = null;
+      _ref.read(driftBackupProvider.notifier).stopForegroundBackup(reason: "the app being sent to the background");
+    });
+  }
+
+  void _cancelPendingBackupStop() {
+    _pendingBackupStopTimer?.cancel();
+    _pendingBackupStopTimer = null;
+  }
+
   Future<void> handleAppDetached() async {
     state = AppLifeCycleEnum.detached;
+
+    // The app is actually going away (not just a brief switcher glance), so there's
+    // no point waiting out the grace period - stop the foreground backup now.
+    _cancelPendingBackupStop();
+    if (_ref.read(authProvider).isAuthenticated) {
+      _ref.read(driftBackupProvider.notifier).stopForegroundBackup(reason: "the app being detached");
+    }
 
     unawaited(_ref.read(backgroundWorkerLockServiceProvider).unlock());
 
