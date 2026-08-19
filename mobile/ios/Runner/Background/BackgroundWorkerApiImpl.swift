@@ -21,6 +21,11 @@ class BackgroundWorkerApiImpl: BackgroundWorkerFgHostApi {
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: BackgroundWorkerApiImpl.processingTaskID);
     print("BackgroundWorkerApiImpl:disableUploadWorker Disabled background workers")
   }
+
+  func triggerImmediateSync() throws {
+    // Android only: BGTaskScheduler has no "run now" API - iOS decides scheduling itself,
+    // and startBackupWithURLSession already hands upload off to the OS-managed URLSession.
+  }
   
   private static let taskIDs = Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as! [String]
   private static let refreshTaskID = taskIDs.first { $0.hasSuffix(".refreshUpload") }!

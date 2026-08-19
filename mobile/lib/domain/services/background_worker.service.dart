@@ -55,6 +55,10 @@ class BackgroundWorkerFgService {
   }
 
   Future<void> disable() => _foregroundHostApi.disable();
+
+  // Android only: ask the native side to run the background worker as soon as possible,
+  // rather than waiting for its next content-trigger or periodic tick.
+  Future<void> triggerImmediateSync() => _foregroundHostApi.triggerImmediateSync();
 }
 
 class BackgroundWorkerBgService extends BackgroundWorkerFlutterApi {

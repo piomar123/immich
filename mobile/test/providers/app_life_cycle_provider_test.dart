@@ -95,6 +95,7 @@ void main() {
   late Completer<ServerVersion?> serverVersion;
   late MockServerInfoService serverInfoService;
   late MockBackgroundWorkerLockService lockService;
+  late MockBackgroundWorkerFgService fgService;
   late ProviderContainer container;
   late TestWebsocketNotifier websocket;
   late TestDriftBackupNotifier driftBackup;
@@ -121,6 +122,7 @@ void main() {
     serverVersion = Completer<ServerVersion?>();
     serverInfoService = MockServerInfoService();
     lockService = MockBackgroundWorkerLockService();
+    fgService = MockBackgroundWorkerFgService();
     serverVersionCount = 0;
 
     when(() => serverInfoService.getServerVersion()).thenAnswer((_) {
@@ -129,6 +131,7 @@ void main() {
     });
     when(() => lockService.lock()).thenAnswer((_) async {});
     when(() => lockService.unlock()).thenAnswer((_) async {});
+    when(() => fgService.triggerImmediateSync()).thenAnswer((_) async {});
 
     container = ProviderContainer(
       overrides: [
@@ -139,6 +142,7 @@ void main() {
         }),
         driftBackupProvider.overrideWith((_) => driftBackup = TestDriftBackupNotifier()),
         backgroundWorkerLockServiceProvider.overrideWithValue(lockService),
+        backgroundWorkerFgServiceProvider.overrideWithValue(fgService),
       ],
     );
     // driftBackupProvider.overrideWith is lazy - force it to instantiate now so
@@ -214,6 +218,7 @@ void main() {
       async.elapse(const Duration(seconds: 10));
 
       expect(driftBackup.stopForegroundBackupCallCount, 0);
+      verifyNever(() => fgService.triggerImmediateSync());
     });
   });
 
@@ -225,6 +230,29 @@ void main() {
       async.elapse(const Duration(seconds: 5, milliseconds: 100));
 
       expect(driftBackup.stopForegroundBackupCallCount, 1);
+    });
+  });
+
+  test('a sustained pause mid-backup triggers an immediate native background sync', () {
+    fakeAsync((async) {
+      unawaited(driftBackup.startForegroundBackup('user-1'));
+      async.flushMicrotasks();
+
+      unawaited(lifeCycle.handleAppPause());
+      async.elapse(const Duration(seconds: 5, milliseconds: 100));
+
+      expect(driftBackup.stopForegroundBackupCallCount, 1);
+      verify(() => fgService.triggerImmediateSync()).called(1);
+    });
+  });
+
+  test('a sustained pause with no backup running does not trigger a native background sync', () {
+    fakeAsync((async) {
+      unawaited(lifeCycle.handleAppPause());
+      async.elapse(const Duration(seconds: 5, milliseconds: 100));
+
+      expect(driftBackup.stopForegroundBackupCallCount, 1);
+      verifyNever(() => fgService.triggerImmediateSync());
     });
   });
 }

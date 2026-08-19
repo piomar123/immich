@@ -27,6 +27,11 @@ abstract class BackgroundWorkerFgHostApi {
   void configure(BackgroundWorkerSettings settings);
 
   void disable();
+
+  // Android only: request that the background worker run as soon as possible instead of
+  // waiting for its next content-trigger or periodic tick. Used when the app is backgrounded
+  // mid-backup so the backlog keeps moving instead of stalling until the next scheduled run.
+  void triggerImmediateSync();
 }
 
 @HostApi()

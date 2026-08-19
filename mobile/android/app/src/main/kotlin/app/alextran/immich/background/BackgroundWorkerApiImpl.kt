@@ -42,6 +42,15 @@ class BackgroundWorkerApiImpl(context: Context) : BackgroundWorkerFgHostApi {
     Log.i(TAG, "Cancelled background upload tasks")
   }
 
+  // The content-uri and periodic triggers alone don't cover the case where the app is
+  // backgrounded mid-backup: the content trigger only fires for *new* media, and the periodic
+  // trigger runs at most once an hour. Enqueue the worker directly so a backlog keeps moving
+  // as soon as the app leaves the foreground instead of stalling until the next scheduled run.
+  override fun triggerImmediateSync() {
+    Log.i(TAG, "Immediate sync requested, enqueuing background worker")
+    enqueueBackgroundWorker(ctx)
+  }
+
   companion object {
     private const val BACKGROUND_WORKER_NAME = "immich/BackgroundWorkerV1"
     private const val OBSERVER_WORKER_NAME = "immich/MediaObserverV1"

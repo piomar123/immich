@@ -238,7 +238,17 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
     _pendingBackupStopTimer?.cancel();
     _pendingBackupStopTimer = Timer(_backupStopGracePeriod, () {
       _pendingBackupStopTimer = null;
-      _ref.read(driftBackupProvider.notifier).stopForegroundBackup(reason: "the app being sent to the background");
+      final backupNotifier = _ref.read(driftBackupProvider.notifier);
+      final hadActiveBackup = backupNotifier.isForegroundBackupActive;
+      backupNotifier.stopForegroundBackup(reason: "the app being sent to the background");
+
+      // The foreground uploader can't run once actually backgrounded. The native background
+      // worker's own triggers don't cover this case (the content-uri trigger only fires for
+      // *new* media, and the periodic one runs at most once an hour), so a pre-existing
+      // backlog would otherwise stall until the next scheduled tick. Kick it directly instead.
+      if (hadActiveBackup && CurrentPlatform.isAndroid) {
+        unawaited(_ref.read(backgroundWorkerFgServiceProvider).triggerImmediateSync());
+      }
     });
   }
 
