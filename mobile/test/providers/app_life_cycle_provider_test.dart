@@ -206,6 +206,50 @@ void main() {
     expect(websocket.connectCount, 1);
   });
 
+  test('an earlier resume call finishing after a later one does not crash', () {
+    // Use a locally controlled, fakeAsync-native delay instead of the shared `serverVersion`
+    // completer (created outside the fakeAsync zone in setUp, which doesn't interact
+    // reliably with async.elapse()) to block Call A mid-resume.
+    var getServerVersionCalls = 0;
+    when(() => serverInfoService.getServerVersion()).thenAnswer((_) async {
+      getServerVersionCalls++;
+      if (getServerVersionCalls == 1) {
+        await Future<void>.delayed(const Duration(seconds: 3));
+      }
+      return null;
+    });
+
+    fakeAsync((async) {
+      // Pause first so _wasPaused is set - otherwise _performResume short-circuits before
+      // ever reaching getServerVersion() and there's nothing to overlap against below.
+      unawaited(lifeCycle.handleAppPause());
+      async.flushMicrotasks();
+
+      // Call A starts and blocks mid-resume on the first getServerVersion() call.
+      Object? callAError;
+      unawaited(lifeCycle.handleAppResume().catchError((Object e) => callAError = e));
+      async.elapse(const Duration(seconds: 1));
+
+      // Pausing again while Call A is still in flight externally completes its resume
+      // operation (see "cancel any ongoing resume operation" in handleAppPause) without
+      // nulling it, and re-sets _wasPaused so Call B below runs its full body too.
+      unawaited(lifeCycle.handleAppPause());
+      async.flushMicrotasks();
+
+      // Resuming again (Call B) sees that (now-completed) operation, isn't held back by the
+      // overlap guard, and runs to completion synchronously - replacing and then clearing the
+      // shared _resumeOperation field before Call A ever wakes back up.
+      unawaited(lifeCycle.handleAppResume());
+      async.flushMicrotasks();
+
+      // Release Call A (its 3s delay elapses). Its continuation must not dereference the
+      // now-null shared field.
+      async.elapse(const Duration(seconds: 5));
+
+      expect(callAError, isNull);
+    });
+  });
+
   test('a brief app-switcher glance does not stop the in-progress foreground backup', () {
     fakeAsync((async) {
       unawaited(lifeCycle.handleAppPause());

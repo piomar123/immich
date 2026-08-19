@@ -61,17 +61,24 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
       _pauseOperation!.complete();
     }
 
-    _resumeOperation = Completer<void>();
+    // Capture locally: an overlapping handleAppPause/handleAppResume call can complete and
+    // then reassign or null the shared field while this call is still suspended on an await
+    // below. Referencing _resumeOperation directly in finally risks a null-check crash or
+    // clobbering a newer call's completer (#reentrancy bug found testing #30503's fix).
+    final resumeOperation = Completer<void>();
+    _resumeOperation = resumeOperation;
 
     try {
       await _performResume();
     } catch (e, stackTrace) {
       _log.severe("Error during app resume", e, stackTrace);
     } finally {
-      if (!_resumeOperation!.isCompleted) {
-        _resumeOperation!.complete();
+      if (!resumeOperation.isCompleted) {
+        resumeOperation.complete();
       }
-      _resumeOperation = null;
+      if (identical(_resumeOperation, resumeOperation)) {
+        _resumeOperation = null;
+      }
     }
   }
 
@@ -209,7 +216,10 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
       _resumeOperation!.complete();
     }
 
-    _pauseOperation = Completer<void>();
+    // See the matching comment in handleAppResume: capture locally so an overlapping call
+    // can't null-check-crash or clobber a newer call's completer from this one's finally.
+    final pauseOperation = Completer<void>();
+    _pauseOperation = pauseOperation;
 
     try {
       unawaited(_ref.read(backgroundWorkerLockServiceProvider).unlock());
@@ -217,10 +227,12 @@ class AppLifeCycleNotifier extends StateNotifier<AppLifeCycleEnum> {
     } catch (e, stackTrace) {
       _log.severe("Error during app pause", e, stackTrace);
     } finally {
-      if (!_pauseOperation!.isCompleted) {
-        _pauseOperation!.complete();
+      if (!pauseOperation.isCompleted) {
+        pauseOperation.complete();
       }
-      _pauseOperation = null;
+      if (identical(_pauseOperation, pauseOperation)) {
+        _pauseOperation = null;
+      }
     }
   }
 
