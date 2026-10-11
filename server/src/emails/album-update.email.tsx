@@ -10,9 +10,12 @@ export const AlbumUpdateEmail = ({
   albumName,
   recipientName,
   albumId,
+  albumUrl,
   cid,
   customTemplate,
 }: AlbumUpdateEmailProps) => {
+  const albumLink = albumUrl ?? `${baseUrl}/albums/${albumId}`;
+
   const usableTemplateVariables = {
     albumName,
     recipientName,
@@ -47,7 +50,7 @@ export const AlbumUpdateEmail = ({
 
       {cid && (
         <Section className="flex justify-center my-0">
-          <Link href={`${baseUrl}/albums/${albumId}`}>
+          <Link href={albumLink}>
             <Img
               className="max-w-[300px] w-full rounded-lg"
               src={`cid:${cid}`}
@@ -61,13 +64,13 @@ export const AlbumUpdateEmail = ({
       )}
 
       <Section className="flex justify-center my-6">
-        <ImmichButton href={`${baseUrl}/albums/${albumId}`}>View Album</ImmichButton>
+        <ImmichButton href={albumLink}>View Album</ImmichButton>
       </Section>
 
       <Text className="text-xs">
         If you cannot click the button use the link below to view the album.
         <br />
-        <Link href={`${baseUrl}/albums/${albumId}`}>{`${baseUrl}/albums/${albumId}`}</Link>
+        <Link href={albumLink}>{albumLink}</Link>
       </Text>
     </ImmichLayout>
   );
