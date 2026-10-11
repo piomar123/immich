@@ -51,7 +51,7 @@ export const AlbumInviteEmail = ({
 
       {cid && (
         <Section className="flex justify-center my-0">
-          <Link href={`${baseUrl}/albums/${albumId}`}>
+          <Link href={albumLink}>
             <Img
               className="max-w-[300px] w-full rounded-lg"
               src={`cid:${cid}`}
