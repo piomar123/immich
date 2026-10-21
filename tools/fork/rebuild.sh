@@ -81,11 +81,11 @@ git checkout -q -B patched "$BASE_SHA"
 
 # A branch may be stacked on one listed above it: its own commits are those not on
 # upstream main and not on any earlier branch
-APPLIED=()
+APPLIED=""
 apply_one() {
     local b="$1" commits
-    commits=$(git rev-list --reverse --no-merges "fork/$b" ^origin/main "${APPLIED[@]}")
-    APPLIED+=("^fork/$b")
+    commits=$(git rev-list --reverse --no-merges "fork/$b" ^origin/main $APPLIED)
+    APPLIED="$APPLIED ^fork/$b"
     echo "Applying $b ($(echo "$commits" | grep -c .) commits)"
     [ -n "$commits" ] || { echo "ERROR: fork/$b has no commits of its own"; exit 1; }
     git checkout -q -B "fork-build/$b" patched
