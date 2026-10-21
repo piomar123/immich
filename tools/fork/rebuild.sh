@@ -113,7 +113,7 @@ if [ "$RUN_TESTS" = 1 ]; then
     echo "Installing dependencies and running server checks, log in $LOG"
     {
         pn install --frozen-lockfile &&
-        pn --filter @immich/plugin-sdk build &&
+        pn --filter "@immich/plugin-sdk..." build &&
         (cd server && pn exec tsc --noEmit) &&
         (cd server && pn exec vitest run --config test/vitest.config.mjs)
     } >"$LOG" 2>&1 || { echo "ERROR: server checks failed, see $LOG"; exit 1; }
