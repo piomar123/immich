@@ -17,7 +17,7 @@
 #
 # Upstream releases are cut from release/vX.Y branches, not from main, while
 # the branches here are based on main (that's where upstream PRs go). So each
-# branch's own commits (merge-base with origin/main..branch) are cherry-picked
+# branch's own commits (not on origin/main nor on an earlier branch) are cherry-picked
 # onto the base and then merged with --no-ff: one merge per branch in
 # `git log --first-parent patched`, and no main-only commits in a release build.
 #
@@ -79,13 +79,18 @@ git config rerere.enabled true
 git config rerere.autoupdate true
 git checkout -q -B patched "$BASE_SHA"
 
+# A branch may be stacked on one listed above it: its own commits are those not on
+# upstream main and not on any earlier branch
+APPLIED=()
 apply_one() {
-    local b="$1" fp
-    fp=$(git merge-base "fork/$b" origin/main)
-    echo "Applying $b ($(git rev-list --count "$fp..fork/$b") commits)"
+    local b="$1" commits
+    commits=$(git rev-list --reverse --no-merges "fork/$b" ^origin/main "${APPLIED[@]}")
+    APPLIED+=("^fork/$b")
+    echo "Applying $b ($(echo "$commits" | grep -c .) commits)"
+    [ -n "$commits" ] || { echo "ERROR: fork/$b has no commits of its own"; exit 1; }
     git checkout -q -B "fork-build/$b" patched
     # On a conflict: continue if rerere resolved all of it, else stop for a manual resolution
-    git cherry-pick -x "$fp..fork/$b" >/dev/null 2>&1 || true
+    git cherry-pick -x $commits >/dev/null 2>&1 || true
     while [ -d "$(git rev-parse --git-path sequencer)" ] || [ -f "$(git rev-parse --git-path CHERRY_PICK_HEAD)" ]; do
         if [ -n "$(git diff --name-only --diff-filter=U)" ] || git diff --cached | grep -q '^+<<<<<<< '; then
             echo "ERROR: cherry-picking $b left conflicts rerere doesn't know:"

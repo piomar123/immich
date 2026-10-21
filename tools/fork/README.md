@@ -21,7 +21,7 @@ tools/fork/rebuild.sh                                          # build on the la
 tools/fork/rebuild.sh --image --push --tag v3.3.4-piomar.1     # and build the image and publish
 ```
 
-The script resets `patched` (in the worktree `.worktrees/patched`) to the base, the latest upstream release tag unless `--base` says otherwise. Upstream releases are cut from `release/vX.Y` branches, which `main` doesn't contain, so a plain merge of a `main`-based branch would drag unreleased upstream commits into the build. Instead each branch's own commits (from its merge-base with upstream `main`) are cherry-picked onto `patched` (`-x`, so each one names its source) and merged with `--no-ff`; then `fork-glue` is merged. `git log --first-parent patched` shows one merge per branch.
+The script resets `patched` (in the worktree `.worktrees/patched`) to the base, the latest upstream release tag unless `--base` says otherwise. Upstream releases are cut from `release/vX.Y` branches, which `main` doesn't contain, so a plain merge of a `main`-based branch would drag unreleased upstream commits into the build. Instead each branch's own commits (those not on upstream `main` and not on a branch listed above it, so a branch can be stacked on an earlier one) are cherry-picked onto `patched` (`-x`, so each one names its source) and merged with `--no-ff`; then `fork-glue` is merged. `git log --first-parent patched` shows one merge per branch.
 
 Tests: `pnpm install`, the plugin SDK build, the server type check and the server unit tests (pnpm through `npx`, at the version upstream's `package.json` pins). The web app is only compiled by the image build.
 
@@ -38,4 +38,4 @@ Tests: `pnpm install`, the plugin SDK build, the server type check and the serve
 
 ## Known combination
 
-`feat/email-album-thumbnail-link` and `feat/email-my-immich-links` both change the album invite/update emails. Resolved: the thumbnail's `<Link>` uses `albumLink` (the my.immich.app link when that setting is on), like the button and the text link. If the rerere cache is lost, resolve it that way again.
+`feat/email-my-immich-links` (fork-only since upstream closed #32347) is stacked on `feat/email-album-thumbnail-link`: both change the album invite/update emails, and without a conflict git would leave the thumbnail's `<Link>` pointing at the plain album URL. Its last commit makes the thumbnail use `albumLink` (the my.immich.app link when that setting is on), like the button and the text link. Rebase it onto `feat/email-album-thumbnail-link` whenever that PR branch changes.
