@@ -6,7 +6,7 @@
 #
 # Usage (from any checkout of the fork, with remotes `origin` = upstream and
 # `fork` = piomar123/immich):
-#   tools/fork/rebuild.sh [--base REF] [--no-test] [--image] [--push] [--tag NAME]
+#   tools/fork/rebuild.sh [--base REF] [--no-test] [--image] [--push] [--tag NAME] [--publish]
 #
 #   --base REF  what to build on: the latest upstream release tag (default),
 #               another tag, or origin/main
@@ -14,6 +14,8 @@
 #   --image     build the server image immich-server-piomar:<tag> (linux/amd64)
 #   --push      force-push the result to fork/patched (with lease)
 #   --tag NAME  tag the result (annotated) and push the tag with --push
+#   --publish   push the image to ghcr.io/piomar123/immich-server-piomar:<tag>
+#               (needs --image and --tag, and a `docker login ghcr.io`)
 #
 # Upstream releases are cut from release/vX.Y branches, not from main, while
 # the branches here are based on main (that's where upstream PRs go). So each
@@ -33,6 +35,7 @@ RUN_TESTS=1
 BUILD_IMAGE=0
 PUSH=0
 TAG=""
+PUBLISH=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --base) BASE="$2"; shift 2 ;;
@@ -40,6 +43,7 @@ while [ $# -gt 0 ]; do
         --image) BUILD_IMAGE=1; shift ;;
         --push) PUSH=1; shift ;;
         --tag) TAG="$2"; shift 2 ;;
+        --publish) PUBLISH=1; shift ;;
         *) echo "Unknown option $1"; exit 1 ;;
     esac
 done
@@ -50,6 +54,12 @@ MAIN_CHECKOUT="$(dirname "$COMMON")"
 WT="$MAIN_CHECKOUT/.worktrees/patched"
 GLUE="fork-glue"
 IMAGE_REPO="immich-server-piomar"
+REGISTRY_REPO="ghcr.io/piomar123/$IMAGE_REPO"
+
+if [ "$PUBLISH" = 1 ] && { [ "$BUILD_IMAGE" = 0 ] || [ -z "$TAG" ]; }; then
+    echo "ERROR: --publish needs --image and --tag"
+    exit 1
+fi
 
 git -C "$REPO" fetch -q origin --tags
 git -C "$REPO" fetch -q --prune fork
@@ -136,12 +146,25 @@ if [ "$BUILD_IMAGE" = 1 ]; then
     echo "Building $IMAGE (linux/amd64)"
     docker buildx build --platform linux/amd64 -f server/Dockerfile \
         --build-arg BUILD_SOURCE_REF="${TAG:-patched}" --build-arg BUILD_SOURCE_COMMIT="$(git rev-parse HEAD)" \
+        --label org.opencontainers.image.source=https://github.com/piomar123/immich \
+        --label org.opencontainers.image.url=https://github.com/piomar123/immich \
+        --label "org.opencontainers.image.title=$IMAGE_REPO" \
+        --label "org.opencontainers.image.description=Immich server $BASE_NAME with the piomar123/immich fork's patches" \
+        --label "org.opencontainers.image.version=${TAG:-$(git describe --tags)}" \
+        --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
+        --label org.opencontainers.image.licenses=AGPL-3.0 \
         -t "$IMAGE" --load .
 fi
 
 if [ "$PUSH" = 1 ]; then
     git push -q --force-with-lease fork patched
     [ -z "$TAG" ] || git push -q fork "refs/tags/$TAG"
+fi
+
+if [ "$PUBLISH" = 1 ]; then
+    echo "Publishing $REGISTRY_REPO:$TAG"
+    docker tag "$IMAGE" "$REGISTRY_REPO:$TAG"
+    docker push -q "$REGISTRY_REPO:$TAG"
 fi
 echo "Built patched at $(git rev-parse --short HEAD) on $BASE_NAME"
 git log --oneline --first-parent "$BASE_SHA"..HEAD
