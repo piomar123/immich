@@ -1,0 +1,6 @@
+# Branches applied onto the fork's `patched` branch, in this order, by tools/fork/rebuild.sh.
+# One branch per line, as named on the fork remote; the rest of the line is a note.
+# Delete a line once its upstream PR is merged and released.
+feat/email-album-thumbnail-link       fork-only (upstream #32310 auto-closed 2026-10-21)
+feat/email-my-immich-links            fork-only (upstream #32347 closed), stacked on the line above
+fix/external-domain-url-description   immich-app/immich#32350
